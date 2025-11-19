@@ -1,5 +1,5 @@
 function rinex_data = parse_rinex_obs_advanced(filepath)
-% 解析 RINEX3 观测文件（Geo++ Logger / 常规 3.xx）
+% 解析 RINEX3 观测文件（ 常规 3.xx）
 % • 支持多行观测码定义
 % • 每观测值 16 字符，从第 4 字符开始
 % • 自动拼接 "主数值 + 尾部数字" 或直接取主数值
