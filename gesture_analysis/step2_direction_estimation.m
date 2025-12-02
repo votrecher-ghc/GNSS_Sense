@@ -1,10 +1,10 @@
 % =========================================================================
-% step2_direction_estimation_v4_trajectory.m
-% 功能: 攻克难点2 - 基于“视距路径切割模型”的时空轨迹拟合
-% 核心: 
-%   1. 区分 Hit (波动) 和 Miss (静默) 卫星
-%   2. 使用 PCA (主成分分析) 拟合 Hit 卫星的空间分布轴线
-%   3. 利用每颗卫星的 Peak Time 差异确定运动矢量方向
+% step2_direction_estimation_v9_3D_Rigorous.m
+% 功能: 基于三维视距切割模型 (3D LoS Cutting Model) 的手势轨迹推断
+% 改进点:
+%   1. 【3D建模】建立局部 ENU 坐标系，真实还原 "接收机-手-卫星" 的空间几何。
+%   2. 【物理平面】假设手在高度 h 处运动，计算视线与该平面的 3D 交点。
+%   3. 【视觉升级】输出带有空间感的 3D 轨迹图，解决“模型粗糙”的问题。
 % =========================================================================
 
 %% 1. 检查环境
@@ -13,204 +13,414 @@ if ~exist('segments', 'var') || isempty(segments)
     error('错误: 未找到 segments 变量。请先运行 step1_segmentation_GVI.m');
 end
 
-% 确保必要路径
 addpath(genpath('sky_plot')); 
 addpath(genpath('calculate_clock_bias_and_positon'));
 addpath(genpath('nav_parse'));
 
-%% 2. 绘制背景天空图 (作为画布)
-fprintf('--> 正在初始化天空图画布...\n');
-fig_handle = figure('Name', 'Gesture Trajectory Analysis', 'Position', [100, 100, 1000, 800]);
-% 调用您的天空图函数 (仅画背景网格，暂不画卫星点，后面我们自己画)
-% 这里为了灵活控制，我们手动建立极坐标轴
-pax = polaraxes('Parent', fig_handle);
-title('手势时空轨迹推断 (基于视距切割模型)');
-set(pax, 'ThetaZeroLocation', 'top', 'ThetaDir', 'clockwise'); % 北为0，顺时针
-set(pax, 'RLim', [0 90]); % 半径表示天顶角 (0=天顶, 90=地平线)
-hold(pax, 'on');
+%% 2. 初始化 3D 画布
+fprintf('--> 正在初始化 3D 空间轨迹分析...\n');
+fig_handle = figure('Name', '3D Gesture Trajectory Model', 'Position', [100, 100, 1200, 900], 'Color', 'w');
+ax = axes('Parent', fig_handle);
+hold(ax, 'on');
+grid(ax, 'on');
+axis(ax, 'equal');
+view(ax, 3); % 开启3D视角
 
-%% 3. 高级参数设置
-TRAJ_PARA.energy_threshold_ratio = 0.4; % 相对阈值: 能量 > 最大星能量的 40% 算 Hit
-TRAJ_PARA.min_hit_sats           = 2;   % 至少需要 2 颗星才能拟合直线
-TRAJ_PARA.projection_radius      = 90;  % 投影平面的归一化半径
+% 设置坐标轴标签
+xlabel(ax, 'East (m)');
+ylabel(ax, 'North (m)');
+zlabel(ax, 'Up (m)');
+title(ax, '基于三维视距路径切割的手势轨迹推演');
 
-%% 4. 核心循环：逐段分析
-colors = lines(length(segments)); % 生成不同颜色
+% --- 参数设置 ---
+TRAJ_PARA.gesture_height       = 0.30;  % 【关键】假设手势发生的物理高度 (米)
+TRAJ_PARA.energy_threshold_ratio = 0.4; % 能量阈值
+TRAJ_PARA.min_hit_sats         = 2;     % 最少卫星数
+TRAJ_PARA.miss_conflict_dist   = 0.15;  % 3D空间中的冲突距离 (米)
+TRAJ_PARA.min_elevation        = 15;    % 最低仰角
 
-fprintf('\n--> 开始进行时空轨迹拟合...\n');
+% 绘制接收机 (原点)
+plot3(ax, 0, 0, 0, '^', 'MarkerSize', 12, 'MarkerFaceColor', 'k', 'MarkerEdgeColor', 'k', 'DisplayName', 'Receiver');
+
+% 绘制手势平面 (半透明参考面)
+plane_range = 1.5; % 平面大小 +/- 1.5米
+patch(ax, [-plane_range plane_range plane_range -plane_range], ...
+          [-plane_range -plane_range plane_range plane_range], ...
+          [TRAJ_PARA.gesture_height TRAJ_PARA.gesture_height TRAJ_PARA.gesture_height TRAJ_PARA.gesture_height], ...
+          [0.9 0.9 1.0], 'FaceAlpha', 0.1, 'EdgeColor', 'none', 'DisplayName', 'Gesture Plane');
+
+%% 3. 核心循环
+colors = lines(length(segments)); 
+
+fprintf('\n--> 开始 3D 轨迹估算...\n');
 
 for i = 1:length(segments)
     seg = segments(i);
     idx_range = seg.start_idx : seg.end_idx;
     seg_times = t_grid(idx_range);
     
-    fprintf('\n=== 手势片段 #%d (%s) ===\n', i, datestr(seg.peak_time, 'HH:MM:SS'));
+    fprintf('\n=== 手势片段 #%d (Peak: %s) ===\n', i, datestr(seg.peak_time, 'HH:MM:SS'));
     
-    % --- 4.1 计算每颗卫星的能量和具体的峰值时刻 ---
     sub_volatility = volatility_matrix(idx_range, :);
     
-    sat_stats = struct('id', {}, 'energy', {}, 'peak_time_offset', {}, 'az', {}, 'el', {}, 'x', {}, 'y', {});
-    num_stats = 0;
+    % 存储 3D 交点信息: [x, y, z]
+    sat_points = struct('id', {}, 'pos_3d', {}, 'energy', {}, 'time_offset', {}, 'vec_u', {});
+    num_pts = 0;
     
-    % 获取参考时刻的接收机位置 (用于计算 Az/El)
+    % 获取接收机位置 (用于计算 ENU 向量)
     [~, epoch_idx] = min(abs([obs_data.time] - seg.peak_time));
     [rec_pos, ~, sat_states] = calculate_receiver_position(obs_data, nav_data, epoch_idx);
     if isempty(rec_pos), continue; end
     [rec_lat, rec_lon, rec_alt] = ecef2geodetic(rec_pos(1), rec_pos(2), rec_pos(3));
 
-    % 遍历所有卫星
+    % --- 3.1 计算每颗卫星的视线向量与平面的交点 ---
     for s = 1:length(valid_sats)
         s_id = valid_sats{s};
         if ~isfield(sat_states, s_id), continue; end
         
-        % 1. 能量积分
+        % 能量 & 时间
         s_energy = sum(sub_volatility(:, s), 'omitnan');
-        
-        % 2. 寻找该卫星自己的峰值时刻 (Local Peak)
         [~, local_max_idx] = max(sub_volatility(:, s));
-        % 转换为相对于段开始的时间偏移 (秒)
         t_offset = seconds(seg_times(local_max_idx) - seg_times(1));
         
-        % 3. 计算方位角/仰角
+        % 计算 ENU 视线向量 (Unit Vector)
         sat_pos = sat_states.(s_id).position;
         [e, n, u] = ecef2enu(sat_pos(1)-rec_pos(1), sat_pos(2)-rec_pos(2), sat_pos(3)-rec_pos(3), rec_lat, rec_lon, rec_alt);
-        az_deg = atan2d(e, n); if az_deg < 0, az_deg = az_deg + 360; end
-        el_deg = asind(u / norm([e, n, u]));
         
-        if el_deg < 0, continue; end % 忽略地平线以下的
+        dist = norm([e, n, u]);
+        vec_u = [e, n, u] / dist; % 单位向量 [Ux, Uy, Uz]
         
-        % 4. 投影到 2D 平面 (用于 PCA 拟合)
-        % 极坐标转笛卡尔坐标: 北为Y轴，东为X轴
-        % 半径 r = 90 - Elevation (天顶在中心)
-        r = 90 - el_deg;
-        theta_rad = deg2rad(az_deg);
+        el_deg = asind(vec_u(3));
+        if el_deg < TRAJ_PARA.min_elevation, continue; end 
         
-        % 注意: 数学坐标系通常 0度是右(东)，逆时针。GPS坐标系 0度是上(北)，顺时针。
-        % GPS(Az, r) -> Cartesian(x, y)
-        % x (East)  = r * sin(Az)
-        % y (North) = r * cos(Az)
-        pos_x = r * sind(az_deg);
-        pos_y = r * cosd(az_deg);
+        % --- 【核心物理建模】计算射线与平面 Z = h 的交点 ---
+        % 射线方程: P = t * vec_u
+        % 我们需要 P.z = h  =>  t * vec_u(3) = h  =>  t = h / vec_u(3)
+        if vec_u(3) <= 0, continue; end % 忽略地平线以下的
         
-        num_stats = num_stats + 1;
-        sat_stats(num_stats).id = s_id;
-        sat_stats(num_stats).energy = s_energy;
-        sat_stats(num_stats).peak_time_offset = t_offset;
-        sat_stats(num_stats).az = az_deg;
-        sat_stats(num_stats).el = el_deg;
-        sat_stats(num_stats).x  = pos_x;
-        sat_stats(num_stats).y  = pos_y;
+        t_intersect = TRAJ_PARA.gesture_height / vec_u(3);
+        intersect_point = t_intersect * vec_u; % [x, y, z] 交点坐标
+        
+        % 限制范围 (只考虑接收机附近的交点)
+        if norm(intersect_point(1:2)) > 2.0, continue; end
+        
+        num_pts = num_pts + 1;
+        sat_points(num_pts).id = s_id;
+        sat_points(num_pts).pos_3d = intersect_point;
+        sat_points(num_pts).vec_u = vec_u; % 保存视线方向用于画射线
+        sat_points(num_pts).energy = s_energy;
+        sat_points(num_pts).time_offset = t_offset;
     end
     
-    if num_stats < 2, continue; end
+    if num_pts < 2, continue; end
     
-    % --- 4.2 区分 Hit (波动) 和 Miss (静默) ---
-    all_energies = [sat_stats.energy];
-    max_energy = max(all_energies);
-    threshold = max_energy * TRAJ_PARA.energy_threshold_ratio;
+    % --- 3.2 Hit / Miss 分类 ---
+    all_energies = [sat_points.energy];
+    threshold = max(all_energies) * TRAJ_PARA.energy_threshold_ratio;
     
-    hit_mask = all_energies > threshold;
-    miss_mask = ~hit_mask;
-    
-    hits = sat_stats(hit_mask);
-    misses = sat_stats(miss_mask);
-    
-    fprintf('   Hit卫星数: %d, Miss卫星数: %d\n', length(hits), length(misses));
+    hits_mask = all_energies > threshold;
+    hits = sat_points(hits_mask);
+    misses = sat_points(~hits_mask);
     
     if length(hits) < TRAJ_PARA.min_hit_sats
-        fprintf('   警告: 有效波动卫星不足，无法拟合轨迹。\n');
+        fprintf('   [跳过] 有效卫星不足\n');
         continue; 
     end
     
-    % --- 4.3 轨迹拟合 (PCA) ---
-    % 提取 Hit 卫星的 (x, y) 坐标
-    P = [ [hits.x]', [hits.y]' ]; 
+    % --- 3.3 在 3D 空间拟合直线 (实际是在 Z=h 平面上) ---
+    % 提取 Hit 点的 (x, y) 坐标进行 PCA
+    coords_3d = vertcat(hits.pos_3d); % N x 3
+    P_xy = coords_3d(:, 1:2);         % N x 2 (只用 xy 拟合，z是固定的)
     
-    % 中心化
-    mean_P = mean(P);
-    P_centered = P - mean_P;
+    mean_P = mean(P_xy);
+    P_centered = P_xy - mean_P;
     
-    % PCA: 计算协方差矩阵的特征向量
-    [coeff, ~, latent] = pca(P_centered);
+    [coeff, ~, ~] = pca(P_centered);
+    dir_vec_2d = coeff(:, 1)'; % [dx, dy]
     
-    % 主成分方向 (第1主成分)
-    dir_vec = coeff(:, 1)'; % [dx, dy]
+    % --- 3.4 时序定向 ---
+    projections = P_centered * dir_vec_2d';
+    times = [hits.time_offset]';
+    corr_val = corr(projections, times);
     
-    % --- 4.4 时序定向 (关键步骤) ---
-    % 将所有 Hit 点投影到主成分轴上，看时间与位置的相关性
-    % Projection = P_centered dot dir_vec
-    projections = P_centered * dir_vec';
-    times = [hits.peak_time_offset]';
-    
-    % 计算相关系数: 如果 位置越靠前的点 时间越晚，说明方向反了
-    % 我们希望找到一个方向向量，使得沿该方向移动时，时间是增加的
-    corr_time_space = corr(projections, times);
-    
-    final_dir = dir_vec;
-    if isnan(corr_time_space) || corr_time_space < 0
-        final_dir = -dir_vec; % 反转方向
+    if ~isnan(corr_val) && corr_val < 0
+        dir_vec_2d = -dir_vec_2d; 
     end
     
-    % 计算轨迹的起点和终点 (用于画箭头)
-    % 在轴线上延伸，覆盖投影范围
-    min_proj = min(P_centered * final_dir');
-    max_proj = max(P_centered * final_dir');
+    % --- 3.5 计算 3D 轨迹端点 ---
+    proj_final = (P_xy - mean_P) * dir_vec_2d';
+    start_xy = mean_P + (min(proj_final) - 0.1) * dir_vec_2d;
+    end_xy   = mean_P + (max(proj_final) + 0.1) * dir_vec_2d;
     
-    start_pt = mean_P + (min_proj * final_dir);
-    end_pt   = mean_P + (max_proj * final_dir);
+    % 恢复为 3D 坐标 (z = h)
+    start_3d = [start_xy, TRAJ_PARA.gesture_height];
+    end_3d   = [end_xy,   TRAJ_PARA.gesture_height];
     
-    % --- 4.5 计算最终的角度 (0-360) ---
-    % final_dir 是 [dx, dy] (East, North)
-    % Azimuth = atan2(dx, dy)
-    traj_az = atan2d(final_dir(1), final_dir(2));
+    % --- 3.6 冲突检测 (3D 距离) ---
+    % 检测 Miss 点到轨迹线段的距离
+    conflict_count = 0;
+    seg_vec = end_3d - start_3d;
+    len_sq = dot(seg_vec, seg_vec);
+    
+    for m = 1:length(misses)
+        m_pt = misses(m).pos_3d;
+        if len_sq > 0
+            t = dot(m_pt - start_3d, seg_vec) / len_sq;
+            if t > 0 && t < 1
+                dist = norm(m_pt - (start_3d + t * seg_vec));
+                if dist < TRAJ_PARA.miss_conflict_dist
+                    conflict_count = conflict_count + 1;
+                    % 在 3D 图中标记冲突
+                    plot3(ax, m_pt(1), m_pt(2), m_pt(3), 'rx', 'MarkerSize', 10, 'LineWidth', 2);
+                end
+            end
+        end
+    end
+    
+    % --- 3.7 结果输出 ---
+    traj_az = atan2d(dir_vec_2d(1), dir_vec_2d(2));
     if traj_az < 0, traj_az = traj_az + 360; end
-    
-    fprintf('   >>> 推测手势方向: %.1f度 (基于 %d 颗星的时序相关性: %.2f)\n', ...
-        traj_az, length(hits), corr_time_space);
+    fprintf('   >>> 3D推演方向: %.1f 度 (相关性: %.2f)\n', traj_az, abs(corr_val));
 
-    % --- 4.6 可视化绘制 ---
+    % --- 3.8 3D 绘图 ---
     draw_color = colors(mod(i-1, size(colors,1)) + 1, :);
     
-    % 1. 画 Miss 卫星 (灰色叉叉)
-    if ~isempty(misses)
-        polarplot(pax, deg2rad([misses.az]), 90-[misses.el], 'x', ...
-            'Color', [0.7 0.7 0.7], 'MarkerSize', 6, 'DisplayName', 'Miss');
+    % 1. 画射线 (LoS Paths)
+    % 仅对 Hit 卫星画彩色射线，Miss 卫星画淡灰色射线
+    for k = 1:length(hits)
+        pt = hits(k).pos_3d;
+        % 从原点连线到交点
+        plot3(ax, [0, pt(1)], [0, pt(2)], [0, pt(3)], '-', 'Color', [draw_color, 0.3], 'LineWidth', 1);
+        % 画交点 (实心球)
+        plot3(ax, pt(1), pt(2), pt(3), 'o', 'MarkerFaceColor', draw_color, 'MarkerEdgeColor', 'k', 'MarkerSize', 8);
     end
     
-    % 2. 画 Hit 卫星 (圆点，颜色深浅代表时间早晚?)
-    % 这里简单画大圆点
-    polarplot(pax, deg2rad([hits.az]), 90-[hits.el], 'o', ...
-        'MarkerFaceColor', draw_color, 'MarkerEdgeColor', 'k', ...
-        'MarkerSize', 8, 'DisplayName', 'Hit');
+    % 2. 画 Miss 点 (灰色小点，不画射线以免太乱)
+    if ~isempty(misses)
+        m_pts = vertcat(misses.pos_3d);
+        plot3(ax, m_pts(:,1), m_pts(:,2), m_pts(:,3), '.', 'Color', [0.8 0.8 0.8], 'MarkerSize', 5);
+    end
     
-    % 3. 画轨迹箭头
-    % 需要把 (x,y) 转回 (theta, r)
-    [start_th, start_r] = cart2pol(start_pt(1), start_pt(2));
-    [end_th, end_r]     = cart2pol(end_pt(1), end_pt(2));
-    
-    % cart2pol 返回的是数学极坐标 (逆时针，0在右)，需要转回地理极坐标
-    % Theta_geo = pi/2 - Theta_math
-    start_az_rad = pi/2 - start_th;
-    end_az_rad   = pi/2 - end_th;
-    
-    % 绘制主轴线
-    polarplot(pax, [start_az_rad, end_az_rad], [start_r, end_r], '-', ...
-        'LineWidth', 3, 'Color', draw_color);
-    
-    % 绘制箭头头部 (简单画个点或者用 text 标记)
-    polarplot(pax, end_az_rad, end_r, '^', ...
-        'MarkerFaceColor', draw_color, 'MarkerSize', 10);
-    
-    % 4. 标注文字
-    text(pax, end_az_rad, end_r, sprintf('  #%d: %.0f^o', i, traj_az), ...
-        'Color', draw_color, 'FontSize', 12, 'FontWeight', 'bold', ...
-        'BackgroundColor', 'w', 'EdgeColor', draw_color);
+    % 3. 画手势轨迹 (粗箭头)
+    quiver3(ax, start_3d(1), start_3d(2), start_3d(3), ...
+            end_3d(1)-start_3d(1), end_3d(2)-start_3d(2), end_3d(3)-start_3d(3), ...
+            0, 'Color', draw_color, 'LineWidth', 3, 'MaxHeadSize', 0.5);
         
-    % 5. (可选) 连接 Hit 点到拟合线的虚线，显示"拟合感"
-    % (代码略，避免太乱)
-    
+    % 4. 文本标签 (浮在轨迹上方)
+    text(ax, end_3d(1), end_3d(2), end_3d(3) + 0.05, sprintf('#%d: %.0f^o', i, traj_az), ...
+        'Color', draw_color, 'FontWeight', 'bold', 'FontSize', 10, 'BackgroundColor', 'w');
 end
 
-hold(pax, 'off');
-title(pax, sprintf('手势轨迹推演 (共%d个手势)', length(segments)));
-fprintf('\n✅ 轨迹拟合完成！现在能够区分正反方向和具体轴线了。\n');
+hold(ax, 'off');
+fprintf('\n✅ 3D 视距路径建模与轨迹拟合完成！\n');
+fprintf('提示: 请在弹出的图形窗口中使用鼠标旋转视角，以观察空间关系。\n');
+
+
+
+
+
+
+
+
+
+
+
+
+
+% % =========================================================================
+% % step2_direction_estimation_v8_final.m
+% % 功能: 手势方向估计 (完全匹配用户天空图风格版)
+% % 特性:
+% %   1. 【底图】使用标准 Zenith-Center 天空图 (与通常习惯一致，天顶在中心)。
+% %   2. 【配色】完全复刻 calculate_and_plot_all_skyplot.m 中的 G/C/E/J 系统配色。
+% %   3. 【内核】保持 Gnomonic 投影拟合直线的严谨数学逻辑。
+% % =========================================================================
+% 
+% %% 1. 检查环境
+% clearvars -except obs_data nav_data segments volatility_matrix valid_sats t_grid PARA;
+% if ~exist('segments', 'var') || isempty(segments)
+%     error('错误: 未找到 segments 变量。请先运行 step1_segmentation_GVI.m');
+% end
+% 
+% addpath(genpath('sky_plot')); 
+% addpath(genpath('calculate_clock_bias_and_positon'));
+% addpath(genpath('nav_parse'));
+% 
+% %% 2. 初始化天空图画布 (风格对齐)
+% fprintf('--> 正在初始化天空图轨迹分析...\n');
+% fig_handle = figure('Name', 'Gesture Direction Analysis', 'Position', [100, 100, 1000, 800]);
+% 
+% pax = polaraxes('Parent', fig_handle);
+% hold(pax, 'on');
+% 
+% % --- 样式设置 (对齐 calculate_and_plot_all_skyplot.m) ---
+% set(pax, 'ThetaZeroLocation', 'top', 'ThetaDir', 'clockwise');
+% % 注意：这里使用标准的正向坐标 (天顶在中心 r=0)，而不是 reverse
+% set(pax, 'RLim', [0 90]); 
+% set(pax, 'RTick', [0 30 60 90]);
+% % 标签对齐：中心是90度，边缘是0度
+% set(pax, 'RTickLabel', {'90', '60', '30', '0'}); 
+% pax.RAxis.Label.String = '仰角 (°)';
+% title(pax, '手势方向推断 (基于视距切割模型)');
+% 
+% %% 3. 参数设置
+% TRAJ_PARA.energy_threshold_ratio = 0.4; 
+% TRAJ_PARA.min_hit_sats         = 2;    
+% TRAJ_PARA.miss_conflict_dist   = 0.25;  
+% TRAJ_PARA.min_elevation        = 15;   
+% 
+% %% 4. 系统配色定义 (复刻用户代码)
+% get_sys_color = @(sid) ...
+%     (startsWith(sid,'G') * [0 0.4470 0.7410]) + ... % GPS: Blue
+%     (startsWith(sid,'C') * [0.8500 0.3250 0.0980]) + ... % BDS: Orange
+%     (startsWith(sid,'E') * [0.4660 0.6740 0.1880]) + ... % GAL: Green
+%     (startsWith(sid,'J') * [0.4940 0.1840 0.5560]) + ... % QZSS: Purple
+%     (~ismember(sid(1), 'GCEJ') * [0.5 0.5 0.5]);         % Others: Gray
+% 
+% %% 5. 核心循环
+% traj_colors = lines(length(segments)); % 轨迹线的颜色 (区分不同手势)
+% 
+% fprintf('\n--> 开始方向估算...\n');
+% 
+% for i = 1:length(segments)
+%     seg = segments(i);
+%     idx_range = seg.start_idx : seg.end_idx;
+%     seg_times = t_grid(idx_range);
+%     
+%     fprintf('\n=== 手势片段 #%d (Peak: %s) ===\n', i, datestr(seg.peak_time, 'HH:MM:SS'));
+%     
+%     sub_volatility = volatility_matrix(idx_range, :);
+%     
+%     sat_points = struct('id', {}, 'az_deg', {}, 'el_deg', {}, 'gx', {}, 'gy', {}, 'energy', {}, 'time_offset', {});
+%     num_pts = 0;
+%     
+%     [~, epoch_idx] = min(abs([obs_data.time] - seg.peak_time));
+%     [rec_pos, ~, sat_states] = calculate_receiver_position(obs_data, nav_data, epoch_idx);
+%     if isempty(rec_pos), continue; end
+%     [rec_lat, rec_lon, rec_alt] = ecef2geodetic(rec_pos(1), rec_pos(2), rec_pos(3));
+% 
+%     for s = 1:length(valid_sats)
+%         s_id = valid_sats{s};
+%         if ~isfield(sat_states, s_id), continue; end
+%         
+%         s_energy = sum(sub_volatility(:, s), 'omitnan');
+%         [~, local_max_idx] = max(sub_volatility(:, s));
+%         t_offset = seconds(seg_times(local_max_idx) - seg_times(1));
+%         
+%         sat_pos = sat_states.(s_id).position;
+%         [e, n, u] = ecef2enu(sat_pos(1)-rec_pos(1), sat_pos(2)-rec_pos(2), sat_pos(3)-rec_pos(3), rec_lat, rec_lon, rec_alt);
+%         az_rad = atan2(e, n); 
+%         el_deg = asind(u / norm([e, n, u]));
+%         az_deg = rad2deg(az_rad); if az_deg<0, az_deg=az_deg+360; end
+%         
+%         if el_deg < TRAJ_PARA.min_elevation, continue; end 
+%         
+%         % Gnomonic 投影 (数学拟合用)
+%         R_math = 1.0 / tand(el_deg);
+%         if R_math > 5.0, R_math = 5.0; end
+%         g_x = R_math * sin(az_rad);
+%         g_y = R_math * cos(az_rad);
+%         
+%         num_pts = num_pts + 1;
+%         sat_points(num_pts).id = s_id;
+%         sat_points(num_pts).az_deg = az_deg;
+%         sat_points(num_pts).el_deg = el_deg;
+%         sat_points(num_pts).gx = g_x;
+%         sat_points(num_pts).gy = g_y;
+%         sat_points(num_pts).energy = s_energy;
+%         sat_points(num_pts).time_offset = t_offset;
+%     end
+%     
+%     if num_pts < 2, continue; end
+%     
+%     % --- Hit / Miss 分类 ---
+%     all_energies = [sat_points.energy];
+%     threshold = max(all_energies) * TRAJ_PARA.energy_threshold_ratio;
+%     
+%     hits = sat_points(all_energies > threshold);
+%     misses = sat_points(all_energies <= threshold);
+%     
+%     if length(hits) < TRAJ_PARA.min_hit_sats
+%         fprintf('   [跳过] 有效波动卫星不足\n');
+%         continue; 
+%     end
+%     
+%     % --- 直线拟合 (PCA in Gnomonic Space) ---
+%     P_hit = [ [hits.gx]', [hits.gy]' ]; 
+%     mean_P = mean(P_hit);
+%     P_centered = P_hit - mean_P;
+%     
+%     [coeff, ~, ~] = pca(P_centered);
+%     dir_vec = coeff(:, 1)'; 
+%     
+%     % --- 时序定向 ---
+%     projections = P_centered * dir_vec';
+%     times = [hits.time_offset]';
+%     corr_val = corr(projections, times);
+%     
+%     if ~isnan(corr_val) && corr_val < 0
+%         dir_vec = -dir_vec; 
+%     end
+%     
+%     % --- 计算起点终点 (Gnomonic) ---
+%     proj_final = (P_hit - mean_P) * dir_vec';
+%     g_start = mean_P + (min(proj_final) - 0.2) * dir_vec;
+%     g_end   = mean_P + (max(proj_final) + 0.2) * dir_vec;
+%     
+%     % --- 转换回 Skyplot 坐标 ---
+%     convert_to_skyplot = @(x, y) deal(atan2(x, y), 90 - atand(1.0 / sqrt(x^2 + y^2)));
+%     [th_start, rho_start] = convert_to_skyplot(g_start(1), g_start(2));
+%     [th_end, rho_end]     = convert_to_skyplot(g_end(1), g_end(2));
+%     
+%     % --- 冲突检测 ---
+%     line_vec = g_end - g_start;
+%     line_len_sq = dot(line_vec, line_vec);
+%     conflict_found = false;
+%     for m = 1:length(misses)
+%         m_pt = [misses(m).gx, misses(m).gy];
+%         if line_len_sq > 0
+%             t = dot(m_pt - g_start, line_vec) / line_len_sq;
+%             if t > 0 && t < 1
+%                 dist = norm(m_pt - (g_start + t * line_vec));
+%                 if dist < TRAJ_PARA.miss_conflict_dist
+%                     % 画冲突标记 (红色叉叉)
+%                     polarplot(pax, deg2rad(misses(m).az_deg), 90 - misses(m).el_deg, 'rx', 'MarkerSize', 10, 'LineWidth', 1.5);
+%                     conflict_found = true;
+%                 end
+%             end
+%         end
+%     end
+%     if conflict_found, fprintf('   [警告] 存在路径冲突\n'); end
+% 
+%     % --- 结果输出 ---
+%     traj_az = rad2deg(atan2(dir_vec(1), dir_vec(2)));
+%     if traj_az < 0, traj_az = traj_az + 360; end
+%     fprintf('   >>> 推测方向: %.1f 度 (相关性: %.2f)\n', traj_az, abs(corr_val));
+% 
+%     % --- 绘图 ---
+%     draw_color = traj_colors(mod(i-1, size(traj_colors,1)) + 1, :);
+%     
+%     % 1. 画 Hit 点 (使用系统专属颜色)
+%     for k = 1:length(hits)
+%         sys_col = get_sys_color(hits(k).id);
+%         % 用实心圆点表示 Hit
+%         polarplot(pax, deg2rad(hits(k).az_deg), 90 - hits(k).el_deg, 'o', ...
+%             'MarkerFaceColor', sys_col, 'MarkerEdgeColor', 'k', 'MarkerSize', 9);
+%     end
+%     
+%     % 2. 画轨迹箭头 (颜色区分手势 ID)
+%     polarplot(pax, [th_start, th_end], [rho_start, rho_end], '-', 'LineWidth', 3, 'Color', draw_color);
+%     polarplot(pax, th_end, rho_end, '^', 'MarkerSize', 8, 'MarkerFaceColor', draw_color, 'MarkerEdgeColor', 'k');
+%         
+%     % 3. 标签
+%     text(pax, th_end, rho_end, sprintf('  #%d', i), 'Color', draw_color, 'FontWeight', 'bold', 'FontSize', 12, 'BackgroundColor', 'w');
+% end
+% 
+% hold(pax, 'off');
+% fprintf('\n✅ 天空图分析完成 (Standard View)\n');
+
+
+
+
+
+

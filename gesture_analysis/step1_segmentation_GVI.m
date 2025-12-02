@@ -1,6 +1,10 @@
 % =========================================================================
-% step1_final_visual_v4.m
-% 功能: 手势检测 Step 1 (连通域合并 + 图3增加阈值线 + 数据导出)
+% step1_segmentation_GVI.m (v5 - 加入SG滤波预处理)
+% 功能: 手势检测 Step 1 
+% 特性:
+%   1. [新增] 引入 Savitzky-Golay 预滤波，消除 SNR 量化噪声。
+%   2. [保持] 连通域合并逻辑，防止动作断裂。
+%   3. [保持] 统一的北京时间轴 (UTC+8 -20s)。
 % =========================================================================
 
 %% 1. 准备工作与参数设置
@@ -9,16 +13,19 @@ if ~exist('obs_data', 'var'), error('请先加载 obs_data!'); end
 
 % --- 核心参数 ---
 PARA.smooth_window_sec = 1.5;  % 基线平滑窗口(秒)
-PARA.gvi_threshold     = 10;    % GVI 阈值 (dB)
+
+% [建议] 滤波后底噪会变低，建议尝试降低此阈值 (例如从 10 降到 5)
+PARA.gvi_threshold     = 6;    % GVI 阈值 (dB)
+
 PARA.sampling_rate     = 10;   % 初始采样率(会自动校准)
 
 % 连通域参数 (解决 M 型波断裂)
 PARA.merge_gap_sec     = 0.5;  % 中间断开小于 0.5 秒视为不断开
 PARA.min_duration_sec  = 0.4;  % 小于 0.4 秒视为噪声
 
-fprintf('--> [Step 1] 开始手势检测 (连通域合并模式)...\n');
+fprintf('--> [Step 1] 开始手势检测 (带 SG 预滤波)...\n');
 
-%% 2. 数据提取与对齐 (保持不变)
+%% 2. 数据提取与对齐
 all_sat_ids = {};
 scan_range = unique([1:min(100, length(obs_data)), max(1, length(obs_data)-100):length(obs_data)]);
 for i = scan_range
@@ -38,7 +45,12 @@ if mean_dt < seconds(0.05), PARA.sampling_rate = 20;
 elseif mean_dt < seconds(0.2), PARA.sampling_rate = 10;
 else, PARA.sampling_rate = 1; end
 
+% 原始时间网格 (UTC)
 t_grid = (min(raw_times) : seconds(1/PARA.sampling_rate) : max(raw_times))'; 
+
+% 构建统一的绘图时间轴 (北京时间 + 修正)
+t_grid_plot = t_grid + hours(8) - seconds(20); 
+
 num_samples = length(t_grid);
 num_sats = length(valid_sats);
 
@@ -76,7 +88,42 @@ for s_idx = 1:num_sats
     end
 end
 
+%% =================== [新增] 2.5 核心预处理 ===================
+fprintf('--> [新增] 正在对 C/N0 矩阵进行 Savitzky-Golay 滤波...\n');
+
+% 备份原始数据 (用于绘图对比)
+cn0_matrix_raw = cn0_matrix; 
+
+% SG 滤波参数: 2阶多项式，7点窗口 (约0.7秒 @ 10Hz)
+% 作用: 填平量化台阶，去除单点毛刺，保留手势波形特征
+sg_order = 2;
+sg_len = 7; 
+
+% 对每一列(每一颗卫星)应用滤波
+% 注意: 如果数据中有 NaN，sgolayfilt 可能会扩散 NaN。
+% 这里做一个简单的 NaN 保护：如果整列有效数据太少则跳过，或者先填补 NaN
+for s = 1:num_sats
+    col_data = cn0_matrix(:, s);
+    valid_mask = ~isnan(col_data);
+    
+    if sum(valid_mask) > sg_len * 2
+        % 临时填补 NaN 以进行滤波 (线性插值)
+        x = 1:length(col_data);
+        filled_data = interp1(x(valid_mask), col_data(valid_mask), x, 'linear', 'extrap')';
+        
+        % 滤波
+        filtered_col = sgolayfilt(filled_data, sg_order, sg_len);
+        
+        % 将滤波结果写回 (仅写回原始非NaN的位置，或者保留填补后的值)
+        % 这里为了计算连续性，建议保留填补后的值
+        cn0_matrix(:, s) = filtered_col;
+    end
+end
+fprintf('    滤波完成。现在的 cn0_matrix 更加平滑，底噪更低。\n');
+% =============================================================
+
 %% 3. 计算波动与分段 (连通域逻辑)
+% 这里的 cn0_matrix 已经是去噪后的版本，计算出的 volatility 会更纯粹
 cn0_smooth = movmean(cn0_matrix, round(PARA.smooth_window_sec * PARA.sampling_rate), 1, 'omitnan');
 volatility_matrix = abs(cn0_matrix - cn0_smooth);
 gvi_curve = sum(volatility_matrix, 2, 'omitnan');
@@ -120,64 +167,76 @@ for i = 1:length(s_indices)
         segments(num_segs).start_idx = s;
         segments(num_segs).end_idx = e;
         segments(num_segs).peak_idx = peak_idx;
-        segments(num_segs).peak_time = t_grid(peak_idx);
+        segments(num_segs).peak_time = t_grid(peak_idx); % 存储 UTC 时间供索引
         segments(num_segs).peak_gvi = max_val;
     end
 end
 
 fprintf('✅ 识别到 %d 个手势片段。\n', num_segs);
 
-%% 4. 结果可视化 (图3增加阈值虚线)
-figure('Name', 'Gesture Detection Analysis', 'Position', [50, 50, 1000, 800]);
+%% 4. 结果可视化
+figure('Name', 'Gesture Detection Analysis (Filtered)', 'Position', [50, 50, 1000, 800]);
 
-% --- 图1 ---
+% --- 图1: C/N0 数据对比 (显示去噪效果) ---
 subplot(3, 1, 1);
-plot(t_grid, cn0_matrix);
-title(sprintf('1. 全星座 C/N0 原始数据 (%d 颗卫星)', num_sats));
-ylabel('SNR'); axis tight; grid on;
+% 为了不让图太乱，这里只画滤波后的数据，或者你可以选择画 raw
+plot(t_grid_plot, cn0_matrix); 
+title(sprintf('1. 滤波后的全星座 C/N0 数据 (SG Filtered, %d sats)', num_sats));
+ylabel('SNR (Filtered)'); 
+xlabel('时间 (北京时间)');
+datetick('x', 'HH:MM:ss', 'keepticks', 'keeplimits');
+axis tight; grid on;
+
 yl = ylim;
 for i=1:num_segs
-    patch([t_grid(segments(i).start_idx) t_grid(segments(i).end_idx) t_grid(segments(i).end_idx) t_grid(segments(i).start_idx)], ...
-          [yl(1) yl(1) yl(2) yl(2)], 'r', 'FaceAlpha', 0.1, 'EdgeColor', 'none');
+    t_s = t_grid_plot(segments(i).start_idx);
+    t_e = t_grid_plot(segments(i).end_idx);
+    patch([t_s t_e t_e t_s], [yl(1) yl(1) yl(2) yl(2)], 'r', 'FaceAlpha', 0.1, 'EdgeColor', 'none');
 end
 
-% --- 图2 ---
+% --- 图2: 波动指数 GVI ---
 subplot(3, 1, 2);
-plot(t_grid, gvi_curve_clean, 'k-', 'LineWidth', 1); hold on;
-yline(PARA.gvi_threshold, 'b--', '阈值'); % 图2也有阈值线
-title(sprintf('2. 波动指数,阈值:%d',PARA.gvi_threshold));
-ylabel('GVI'); axis tight; grid on;
+plot(t_grid_plot, gvi_curve_clean, 'k-', 'LineWidth', 1); hold on;
+yline(PARA.gvi_threshold, 'b--', '阈值');
+title(sprintf('2. 波动指数 (基于滤波数据), 阈值:%d', PARA.gvi_threshold));
+ylabel('GVI'); 
+xlabel('时间 (北京时间)');
+datetick('x', 'HH:MM:ss', 'keepticks', 'keeplimits');
+axis tight; grid on;
+
 yl2 = ylim;
 for i=1:num_segs
-    x_s = t_grid(segments(i).start_idx); x_e = t_grid(segments(i).end_idx);
-    patch([x_s x_e x_e x_s], [yl2(1) yl2(1) yl2(2) yl2(2)], 'r', 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+    t_s = t_grid_plot(segments(i).start_idx);
+    t_e = t_grid_plot(segments(i).end_idx);
+    patch([t_s t_e t_e t_s], [yl2(1) yl2(1) yl2(2) yl2(2)], 'r', 'FaceAlpha', 0.2, 'EdgeColor', 'none');
 end
 
-% --- 图3：检测到的手势动作片段 (详细高亮 + 标签 + 红色背景 + 阈值线) ---
+% --- 图3：手势片段详情 ---
 subplot(3, 1, 3);
-plot(t_grid, gvi_curve_clean, 'Color', [0.8 0.8 0.8], 'LineWidth', 0.5); hold on;
-
-% [新增] 在图3中添加蓝色的阈值虚线
+plot(t_grid_plot, gvi_curve_clean, 'Color', [0.8 0.8 0.8], 'LineWidth', 0.5); hold on;
 yline(PARA.gvi_threshold, 'b--', '阈值'); 
 
 title('3. 检测到的手势动作片段详情 (红色高亮)');
-ylabel('GVI Detail'); xlabel('时间');
+ylabel('GVI Detail'); 
+xlabel('时间 (北京时间)');
+datetick('x', 'HH:MM:ss', 'keepticks', 'keeplimits');
 grid on; axis tight;
 
 yl3 = ylim; 
 for i = 1:num_segs
     idx_range = segments(i).start_idx : segments(i).end_idx;
-    t_s = t_grid(segments(i).start_idx);
-    t_e = t_grid(segments(i).end_idx);
+    t_s = t_grid_plot(segments(i).start_idx);
+    t_e = t_grid_plot(segments(i).end_idx);
+    t_peak = t_grid_plot(segments(i).peak_idx);
     
     % 1. 红色背景块
     patch([t_s t_e t_e t_s], [yl3(1) yl3(1) yl3(2) yl3(2)], 'r', 'FaceAlpha', 0.1, 'EdgeColor', 'none');
       
     % 2. 红色波形线
-    plot(t_grid(idx_range), gvi_curve_clean(idx_range), 'r-', 'LineWidth', 2);
+    plot(t_grid_plot(idx_range), gvi_curve_clean(idx_range), 'r-', 'LineWidth', 2);
     
     % 3. 标签
-    text(segments(i).peak_time, segments(i).peak_gvi, sprintf('  #%d', i), ...
+    text(t_peak, segments(i).peak_gvi, sprintf('  #%d', i), ...
         'Color', 'r', 'FontWeight', 'bold', 'FontSize', 11, ...
         'VerticalAlignment', 'bottom');
 end
@@ -190,30 +249,21 @@ start_idxs = [segments.start_idx]';
 end_idxs   = [segments.end_idx]';
 dur_samples = end_idxs - start_idxs + 1;
 
-% 假设原始 obs_data 时间是 UTC，转为北京时间 (+8h)
-start_times_bjt = t_grid(start_idxs) + hours(8);
-end_times_bjt   = t_grid(end_idxs)   + hours(8);
+start_times_bjt = t_grid_plot(start_idxs);
+end_times_bjt   = t_grid_plot(end_idxs);
 dur_seconds = seconds(end_times_bjt - start_times_bjt);
 
-% 表格 1: 采样点信息
 T_Index = table(ids, start_idxs, end_idxs, dur_samples, ...
     'VariableNames', {'GestureID', 'Start_Index', 'End_Index', 'Duration_Points'});
 
-% 表格 2: 北京时间信息
 T_Time = table(ids, start_times_bjt, end_times_bjt, dur_seconds, ...
     'VariableNames', {'GestureID', 'Start_Time_BJT', 'End_Time_BJT', 'Duration_Sec'});
 
 fprintf('\n=== 表格 1: 采样点信息 ===\n');
 disp(T_Index);
 
-fprintf('\n=== 表格 2: 北京时间信息 (UTC+8) ===\n');
+fprintf('\n=== 表格 2: 北京时间信息 (UTC+8 -20s修正) ===\n');
 disp(T_Time);
-
-% % 保存到 CSV 文件
-% writetable(T_Index, 'Gesture_Result_Indices.csv');
-% writetable(T_Time,  'Gesture_Result_Times_BJT.csv');
-% 
-% fprintf('✅ 结果已保存为: \n   - Gesture_Result_Indices.csv\n   - Gesture_Result_Times_BJT.csv\n');
 
 
 
