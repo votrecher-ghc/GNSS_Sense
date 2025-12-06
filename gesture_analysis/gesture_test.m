@@ -1,8 +1,8 @@
 % ============== test.m (最终调用脚本) ==============
 clear; clc; 
 close all;
-obs_filepath = 'fingure_200_10_30_1.obs'; 
-nav_filepath = 'arounds_10_30_1.nav'; 
+obs_filepath = 'mixfingure_300_11_24_1.obs'; 
+nav_filepath = 'arounds_11_24_1.nav'; 
 % --- 2. 解析文件 ---
 fprintf('--> 正在解析观测文件: %s\n', obs_filepath);
 obs_data = parse_rinex_obs(obs_filepath);
@@ -12,7 +12,18 @@ nav_data = parse_rinex_nav_multi_gnss(nav_filepath);
 calculate_and_plot_all_skyplot(obs_data, nav_data);
 
 %%
+% % 3. 设置参数
+% target_elevation = 60; % 方案A的阈值：30度
+% 
+% % 4. 调用统计函数
+% %    我们取 OBS 数据的第 100 个历元（或者中间历元）进行测试，避免开头数据不稳定
+% test_epoch = floor(length(obs_data) / 2); 
+% 
+% [count, sat_ids] = count_high_elevation_satellites(obs_data, nav_data, target_elevation);
+%%
 % step1_segmentation_GVI;
 % step2_direction_estimation;
+% run_gesture_analysis_3d_pipeline
 
-run_gesture_analysis_3d_pipeline
+
+run_gesture_analysis_robust

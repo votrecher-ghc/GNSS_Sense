@@ -490,7 +490,8 @@ function [all_sats_data] = calculate_and_plot_all_skyplot(obs_data, nav_data)
             end
             
             theta = deg2rad(all_sats_data(i).azimuth);
-            r = 90 - all_sats_data(i).elevation;
+%             r = 90 - all_sats_data(i).elevation;
+               r = all_sats_data(i).elevation;
             
             plot_handles(i) = polarplot(pax, theta, r, '-', 'LineWidth', 2.0, 'Color', sys_col);
             polarplot(pax, theta(1), r(1), 'o', 'MarkerEdgeColor', sys_col, 'MarkerSize', 8, 'LineWidth', 1.5);
