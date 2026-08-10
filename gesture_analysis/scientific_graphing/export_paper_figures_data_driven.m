@@ -5099,13 +5099,17 @@ catch
 end
 tighten_exported_png_whitespace_local(png_path);
 
-try
-    exportgraphics(fig, pdf_path, 'ContentType', 'vector');
-catch
+if use_fixed_pdf_canvas_export_local(base_name)
+    save_fixed_canvas_pdf_local(fig, pdf_path);
+else
     try
-        print(fig, pdf_path, '-dpdf', '-painters');
+        exportgraphics(fig, pdf_path, 'ContentType', 'vector');
     catch
-        saveas(fig, pdf_path);
+        try
+            print(fig, pdf_path, '-dpdf', '-painters');
+        catch
+            saveas(fig, pdf_path);
+        end
     end
 end
 
@@ -5240,6 +5244,47 @@ switch char(string(base_name))
     case 'traj_gallery_data_driven'
         target_w = 6846; target_h = 4100;
 end
+end
+
+function tf = use_fixed_pdf_canvas_export_local(base_name)
+tf = any(strcmp(char(string(base_name)), { ...
+    'scenario_authentication_metrics_bar', ...
+    'scenario_authentication_roc'}));
+end
+
+function save_fixed_canvas_pdf_local(fig, pdf_path)
+if isempty(fig) || ~isgraphics(fig)
+    return;
+end
+
+old_units = get(fig, 'Units');
+set(fig, 'Units', 'pixels');
+fig_pos = get(fig, 'Position');
+if numel(fig_pos) < 4 || any(~isfinite(fig_pos(3:4))) || any(fig_pos(3:4) <= 0)
+    fig_pos = consistent_paper_canvas_position_local();
+    set(fig, 'Position', fig_pos);
+end
+
+screen_ppi = get(0, 'ScreenPixelsPerInch');
+if isempty(screen_ppi) || ~isfinite(screen_ppi) || screen_ppi <= 0
+    screen_ppi = 96;
+end
+paper_w = fig_pos(3) / screen_ppi;
+paper_h = fig_pos(4) / screen_ppi;
+
+set(fig, ...
+    'PaperUnits', 'inches', ...
+    'PaperPositionMode', 'manual', ...
+    'PaperSize', [paper_w, paper_h], ...
+    'PaperPosition', [0, 0, paper_w, paper_h], ...
+    'InvertHardcopy', 'off');
+
+try
+    print(fig, pdf_path, '-dpdf', '-painters');
+catch
+    saveas(fig, pdf_path);
+end
+set(fig, 'Units', old_units);
 end
 
 function tf = force_png_repad_local(base_name)
