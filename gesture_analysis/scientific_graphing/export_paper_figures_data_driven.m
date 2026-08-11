@@ -2773,11 +2773,14 @@ labels = cellstr(tbl.scenario_label);
 vals = 100 * [tbl.accuracy, tbl.balanced_accuracy, tbl.f1_score, tbl.eer];
 [tick_fs, label_fs, legend_fs, x_label_fs] = scenario_auth_font_sizes_local();
 
-f = figure('Visible', on_off(cfg.show_figures), 'Color', 'w', 'Position', consistent_paper_canvas_position_local());
+% Use a square canvas so this panel has the same visible footprint as the
+% adjacent square ROC panel in the paper's 2-by-2 environment comparison.
+f = figure('Visible', on_off(cfg.show_figures), 'Color', 'w', ...
+    'Position', [120, 90, 1200, 1200]);
 ax = axes(f);
 hold(ax, 'on');
 apply_axes_style(ax, cfg);
-ax.Position = paper_axes_position_local('scenario_bar_large_text');
+ax.Position = paper_axes_position_local('scenario_bar_square');
 ax.Layer = 'bottom';
 grid(ax, 'on');
 
@@ -4934,6 +4937,8 @@ switch lower(string(layout_name))
         pos = [0.110, 0.135, 0.830, 0.795];
     case "scenario_bar_large_text"
         pos = [0.220, 0.275, 0.700, 0.600];
+    case "scenario_bar_square"
+        pos = [0.125, 0.125, 0.8125, 0.8125];
     case "bar_auth_large"
         pos = [0.145, 0.190, 0.785, 0.695];
     case "bar_auth_huge"

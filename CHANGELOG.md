@@ -3,6 +3,14 @@
 本文档记录 StarDial 代码与论文的同步修改。论文侧对应记录位于
 `D:\论文\StarDial-src\CHANGELOG.md`。
 
+## 2026-08-11 18:01:00（北京时间，UTC+08:00）
+
+### Fig. 17 子图尺寸修正
+
+- 修正此前仅统一 LaTeX 高度但可见绘图区仍不一致的问题。
+- 将 Fig. 17(c) 的认证指标柱状图及其导出逻辑改为方形画布和方形绘图区，使其与 Fig. 17(d) 的 ROC 图具有一致的可见尺寸。
+- 新增 `gesture_analysis/scientific_graphing/square_environment_metrics.py`，用于在无 MATLAB 环境中复现相同数据和配色的方形柱状图。
+
 ## 2026-08-11 17:36:18（北京时间，UTC+08:00）
 
 ### 论文图表排版
