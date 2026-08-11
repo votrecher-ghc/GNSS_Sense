@@ -81,9 +81,9 @@ cdf_path = figure_png_path(out_dir, 'cdf_rmse_mte.png');
 plot_error_cdf(metric_cdf_tbl, cdf_path, cfg);
 manifest(end + 1, :) = {'cdf_rmse_mte', 'cdf_rmse_mte.png', cdf_path}; %#ok<AGROW>
 
-gallery_path = figure_png_path(out_dir, 'traj_gallery_data_driven.png');
-plot_single_method_gallery(method_cases, template_order, gallery_path, cfg, 22);
-manifest(end + 1, :) = {'traj_gallery_data_driven', 'traj_gallery_data_driven.png', gallery_path}; %#ok<AGROW>
+gallery_path = figure_png_path(out_dir, 'traj_gallery_data_driven_compact.png');
+plot_single_method_gallery(method_cases, template_order, gallery_path, cfg);
+manifest(end + 1, :) = {'traj_gallery_data_driven_compact', 'traj_gallery_data_driven_compact.png', gallery_path}; %#ok<AGROW>
 
 if cfg.auth_perf.enable
     auth_perf_cache_path = fullfile(cache_dir, cfg.auth_perf.cache_name);
@@ -1490,14 +1490,17 @@ if isempty(ordered_cases)
 end
 
 if nargin < 5 || isempty(gallery_font_size)
-    [tick_fs, label_fs] = paper_font_sizes_local();
+    [tick_fs, label_fs] = gallery_font_sizes_local();
 else
     tick_fs = gallery_font_size;
     label_fs = gallery_font_size;
 end
 
 n_case = numel(ordered_cases);
-n_col = min(4, max(3, ceil(sqrt(n_case))));
+% Twelve gestures are arranged as 6 x 2 rather than 4 x 3.  At IEEE
+% double-column width this preserves the physical size of each trajectory
+% panel while reducing the figure height by roughly 40 percent.
+n_col = min(6, n_case);
 n_row = ceil(n_case / n_col);
 
 [x_lim, y_lim] = common_gallery_limits(ordered_cases);
@@ -1505,18 +1508,16 @@ x_lim = 100 * x_lim;
 y_lim = 100 * y_lim;
 
 f = figure('Visible', on_off(cfg.show_figures), 'Color', 'w', ...
-    'Position', [50, 40, 1920, max(1120, 375 * n_row)]);
+    'Position', [50, 40, 1920, max(830, 390 * n_row)]);
 grid_left = 0.060;
-grid_bottom = 0.165;
-grid_width = 0.885;
-grid_height = 0.775;
-col_gap = 0.003;
+grid_bottom = 0.185;
+grid_width = 0.925;
+grid_height = 0.735;
+col_gap = 0.010;
 row_gap = 0.105;
-base_col_gap = 0.070;
-tile_w = (grid_width - base_col_gap * (n_col - 1)) / n_col;
+tile_w = (grid_width - col_gap * (n_col - 1)) / n_col;
 tile_h = (grid_height - row_gap * (n_row - 1)) / n_row;
-used_grid_width = tile_w * n_col + col_gap * (n_col - 1);
-grid_left_effective = grid_left + max(0, (grid_width - used_grid_width) / 2);
+grid_left_effective = grid_left;
 for i = 1:n_case
     row_idx = floor((i - 1) / n_col) + 1;
     col_idx = mod(i - 1, n_col) + 1;
@@ -1541,28 +1542,43 @@ for i = 1:n_case
     [gt_sx, gt_sy, gt_ex, gt_ey] = find_trace_endpoints_local(gt_px, gt_py);
     [rc_sx, rc_sy, rc_ex, rc_ey] = find_trace_endpoints_local(rec_px, rec_py);
     plot(ax, gt_sx, gt_sy, 'o', 'Color', cfg.style.gt_color, ...
-        'MarkerFaceColor', cfg.style.gt_color, 'MarkerSize', 4.8, 'LineWidth', 1.0, ...
+        'MarkerFaceColor', cfg.style.gt_color, 'MarkerSize', 3.4, 'LineWidth', 0.8, ...
         'HandleVisibility', 'off');
     plot(ax, gt_ex, gt_ey, 's', 'Color', cfg.style.gt_color, ...
-        'MarkerFaceColor', 'w', 'MarkerSize', 5.0, 'LineWidth', 1.1, ...
+        'MarkerFaceColor', 'w', 'MarkerSize', 3.6, 'LineWidth', 0.8, ...
         'HandleVisibility', 'off');
     plot(ax, rc_sx, rc_sy, 'o', 'Color', cfg.style.rec_color, ...
-        'MarkerFaceColor', cfg.style.rec_color, 'MarkerSize', 4.8, 'LineWidth', 1.0, ...
+        'MarkerFaceColor', cfg.style.rec_color, 'MarkerSize', 3.4, 'LineWidth', 0.8, ...
         'HandleVisibility', 'off');
     plot(ax, rc_ex, rc_ey, 's', 'Color', cfg.style.rec_color, ...
-        'MarkerFaceColor', 'w', 'MarkerSize', 5.0, 'LineWidth', 1.1, ...
+        'MarkerFaceColor', 'w', 'MarkerSize', 3.6, 'LineWidth', 0.8, ...
         'HandleVisibility', 'off');
     xlim(ax, x_lim);
     ylim(ax, y_lim);
+    xticks(ax, [-20, 0, 20]);
+    yticks(ax, [-20, 0, 20]);
     title(ax, pretty_template_label(ordered_cases(i).template), 'Interpreter', 'none', ...
         'FontName', cfg.style.font_name, 'FontSize', label_fs);
-    xlabel(ax, 'East (cm)');
-    ylabel(ax, 'North (cm)');
     apply_fixed_axes_font_size_local(ax, cfg, tick_fs, label_fs);
+    if row_idx < n_row
+        ax.XTickLabel = [];
+    end
+    if col_idx > 1
+        ax.YTickLabel = [];
+    end
 
 end
 
-legend_ax = axes('Parent', f, 'Position', [0.070, 0.020, 0.860, 0.075], ...
+annotation(f, 'textbox', [0.445, 0.105, 0.12, 0.035], ...
+    'String', 'East (cm)', 'EdgeColor', 'none', ...
+    'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+    'FontName', cfg.style.font_name, 'FontSize', label_fs);
+annotation(f, 'textbox', [0.004, 0.450, 0.035, 0.18], ...
+    'String', 'North (cm)', 'EdgeColor', 'none', 'Rotation', 90, ...
+    'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+    'FontName', cfg.style.font_name, 'FontSize', label_fs);
+
+legend_ax = axes('Parent', f, 'Position', [0.180, 0.018, 0.640, 0.060], ...
     'Visible', 'off', 'XColor', 'none', 'YColor', 'none');
 hold(legend_ax, 'on');
 lg1 = plot(legend_ax, NaN, NaN, '-', 'Color', cfg.style.gt_color, 'LineWidth', 2.4);
@@ -1573,8 +1589,8 @@ lg4 = plot(legend_ax, NaN, NaN, 's', 'Color', [0.22 0.22 0.22], ...
     'MarkerFaceColor', 'w', 'MarkerSize', 5.0, 'LineWidth', 1.1);
 lgd = legend(legend_ax, [lg1, lg2, lg3, lg4], ...
     {'Ground truth', 'Recovered trajectory', 'Gesture Start', 'Gesture End'}, ...
-    'Orientation', 'horizontal', 'Location', 'north', 'Box', 'on', 'NumColumns', 4);
-apply_fixed_legend_font_size_local(lgd, cfg, tick_fs);
+    'Orientation', 'horizontal', 'Location', 'north', 'Box', 'off', 'NumColumns', 4);
+apply_fixed_legend_font_size_local(lgd, cfg, max(1, tick_fs - 1));
 if isprop(lgd, 'ItemTokenSize')
     lgd.ItemTokenSize = [20, 12];
 end
@@ -1582,7 +1598,7 @@ drawnow;
 lgd.Units = 'normalized';
 lgd_pos = lgd.Position;
 lgd_pos(1) = 0.5 - lgd_pos(3) / 2;
-lgd_pos(2) = 0.020;
+lgd_pos(2) = 0.018;
 lgd.Position = lgd_pos;
 
 save_figure(f, out_path, cfg.save_resolution, cfg.show_figures);
@@ -4766,6 +4782,14 @@ tick_fs = 30;
 label_fs = 30;
 end
 
+function [tick_fs, label_fs] = gallery_font_sizes_local()
+% The gallery is exported on a 1920-pixel canvas and inserted at IEEE
+% double-column width.  These values yield approximately 7.5--8.5 pt text in
+% the final paper, consistent with the other evaluation figures.
+tick_fs = 19;
+label_fs = 21;
+end
+
 function [tick_fs, label_fs] = compact_paper_font_sizes_local()
 tick_fs = 28;
 label_fs = 28;
@@ -5243,6 +5267,8 @@ switch char(string(base_name))
         target_w = 2652; target_h = 2616;
     case 'traj_gallery_data_driven'
         target_w = 6846; target_h = 4100;
+    case 'traj_gallery_data_driven_compact'
+        target_w = 6846; target_h = 2500;
 end
 end
 
@@ -5288,7 +5314,9 @@ set(fig, 'Units', old_units);
 end
 
 function tf = force_png_repad_local(base_name)
-tf = any(strcmp(char(string(base_name)), {'traj_gallery_data_driven'}));
+tf = any(strcmp(char(string(base_name)), { ...
+    'traj_gallery_data_driven', ...
+    'traj_gallery_data_driven_compact'}));
 end
 
 function [r0, r1, c0, c1] = detect_content_bbox_local(img, alpha)

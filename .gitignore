@@ -1,2 +1,4 @@
 data/
 gesture_analysis/results
+__pycache__/
+*.py[cod]

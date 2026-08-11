@@ -1,0 +1,442 @@
+{
+  "scope": {
+    "implementation": "isolated Python/NumPy StarDial reference pipeline",
+    "included": [
+      "C/N0 preprocessing",
+      "diffraction feature extraction",
+      "event-conditioned LoS geometric inversion",
+      "RMSE + DTW + structured template scoring",
+      "physical consistency validation",
+      "joint authentication decision"
+    ],
+    "excluded": [
+      "RINEX parsing",
+      "ephemeris acquisition",
+      "synthetic input generation",
+      "plotting and file I/O",
+      "offline threshold calibration"
+    ]
+  },
+  "environment": {
+    "timestamp_utc": "2026-08-11T02:03:02.954397+00:00",
+    "os": "Windows-11-10.0.26100-SP0",
+    "cpu_model": "Intel(R) Core(TM) i5-14500",
+    "logical_cpu_count": 20,
+    "cpu_affinity_logical_processors": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "total_memory_gib": 31.692058563232422,
+    "python_version": "3.12.10",
+    "numpy_version": "2.5.1",
+    "git_commit": "530d78ce4c39e4ce2276320cf2047c13302db12e",
+    "timer": "time.perf_counter_ns",
+    "thread_environment": {
+      "OPENBLAS_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1"
+    }
+  },
+  "input": {
+    "label": "Star",
+    "frames": 100,
+    "satellites": 16,
+    "sample_rate_hz": 25.0,
+    "window_seconds": 4.0,
+    "template_count": 12,
+    "compare_points": 160,
+    "seed": 20260811,
+    "source": "deterministic synthetic C/N0 coupled to time-indexed LoS geometry"
+  },
+  "configuration": {
+    "sample_rate_hz": 25.0,
+    "compare_points": 160,
+    "grid_points_per_axis": 27,
+    "grid_min_m": -0.52,
+    "grid_max_m": 0.52,
+    "body_anchor_x_m": 0.0,
+    "body_anchor_y_m": -0.68,
+    "fresnel_sigma_m": 0.05,
+    "beam_width": 48,
+    "max_jump_m": 0.18,
+    "smoothness_weight": 16.0,
+    "emission_weight": 18.0,
+    "dtw_weight": 0.35,
+    "rmse_weight": 0.45,
+    "shape_weight": 0.2,
+    "softmax_temperature": 0.16,
+    "gesture_score_threshold": 0.12,
+    "physical_score_threshold": 0.58,
+    "event_threshold": 0.48
+  },
+  "correctness_smoke_test": {
+    "genuine": {
+      "accepted": true,
+      "predicted_template": "Star",
+      "claimed_template": "Star",
+      "claimed_score": 0.2536631421390376,
+      "best_score": 0.2536631421390376,
+      "physical_score": 0.7752742625414029,
+      "gesture_pass": true,
+      "physical_pass": true,
+      "diagnostics": {
+        "event_consistency": 0.7520188128242818,
+        "exclusion_consistency": 0.9697743463899254,
+        "waveform_agreement": 0.924612561952515,
+        "temporal_consistency": 0.2564730064486273,
+        "active_event_fraction": 0.321875,
+        "salient_segment_fraction": 0.40125,
+        "best_distance": 0.1221972712354286,
+        "best_rmse": 0.22881831613150774,
+        "best_dtw": 0.05494008278928606
+      },
+      "stage_ms": {
+        "preprocessing": 6.4005,
+        "diffraction_features": 0.182,
+        "geometric_inversion": 80.7347,
+        "template_matching": 21.3134,
+        "physical_validation": 0.4224,
+        "joint_decision": 0.0051,
+        "total_internal": 109.0646
+      }
+    },
+    "wrong_claim": {
+      "accepted": false,
+      "predicted_template": "Star",
+      "claimed_template": "A",
+      "claimed_score": 0.10822678362367931,
+      "best_score": 0.2536631421390376,
+      "physical_score": 0.7752742625414029,
+      "gesture_pass": false,
+      "physical_pass": true,
+      "diagnostics": {
+        "event_consistency": 0.7520188128242818,
+        "exclusion_consistency": 0.9697743463899254,
+        "waveform_agreement": 0.924612561952515,
+        "temporal_consistency": 0.2564730064486273,
+        "active_event_fraction": 0.321875,
+        "salient_segment_fraction": 0.40125,
+        "best_distance": 0.1221972712354286,
+        "best_rmse": 0.22881831613150774,
+        "best_dtw": 0.05494008278928606
+      },
+      "stage_ms": {
+        "preprocessing": 0.3749,
+        "diffraction_features": 0.2584,
+        "geometric_inversion": 78.8173,
+        "template_matching": 20.5583,
+        "physical_validation": 0.3681,
+        "joint_decision": 0.0043,
+        "total_internal": 100.3889
+      }
+    }
+  },
+  "steady_state": {
+    "warmup_iterations": 15,
+    "measurement_iterations": 200,
+    "latency_ms": {
+      "mean": 100.25740099999999,
+      "std": 2.6345490817251997,
+      "min": 94.9398,
+      "median": 100.30845,
+      "p95": 104.39386,
+      "p99": 106.74641399999999,
+      "max": 109.9834
+    },
+    "stage_latency_ms": {
+      "preprocessing": {
+        "mean": 0.3296025,
+        "std": 0.054093900711828,
+        "min": 0.2734,
+        "median": 0.30595,
+        "p95": 0.4397699999999999,
+        "p99": 0.4814279999999996,
+        "max": 0.625
+      },
+      "diffraction_features": {
+        "mean": 0.157597,
+        "std": 0.04342191502597062,
+        "min": 0.1256,
+        "median": 0.14315,
+        "p95": 0.24239499999999983,
+        "p99": 0.31174999999999986,
+        "max": 0.4895
+      },
+      "geometric_inversion": {
+        "mean": 79.1252195,
+        "std": 2.1803368828424583,
+        "min": 74.83,
+        "median": 79.203,
+        "p95": 82.506945,
+        "p99": 84.016016,
+        "max": 88.2264
+      },
+      "template_matching": {
+        "mean": 20.23213,
+        "std": 0.787599093422408,
+        "min": 18.8003,
+        "median": 20.107300000000002,
+        "p95": 21.577814999999998,
+        "p99": 22.670714999999998,
+        "max": 23.7122
+      },
+      "physical_validation": {
+        "mean": 0.36202,
+        "std": 0.05945530984989258,
+        "min": 0.2915,
+        "median": 0.34304999999999997,
+        "p95": 0.47025,
+        "p99": 0.596926,
+        "max": 0.6886
+      },
+      "joint_decision": {
+        "mean": 0.0036945,
+        "std": 0.0014007965250251778,
+        "min": 0.0029,
+        "median": 0.0034,
+        "p95": 0.004609999999999997,
+        "p99": 0.01241099999999999,
+        "max": 0.0139
+      },
+      "total_internal": {
+        "mean": 100.215511,
+        "std": 2.6354617416951234,
+        "min": 94.8777,
+        "median": 100.26945,
+        "p95": 104.35797,
+        "p99": 106.707989,
+        "max": 109.9459
+      }
+    },
+    "stationarity_check": {
+      "first_quarter_mean_ms": 97.62357400000002,
+      "last_quarter_mean_ms": 101.532338,
+      "last_vs_first_drift_percent": 4.003914054611416,
+      "maximum_allowed_absolute_drift_percent": 15.0,
+      "passed": true
+    },
+    "batch_cpu_and_throughput": {
+      "wall_ms": 20052.3117,
+      "cpu_ms": 19406.25,
+      "cpu_time_per_inference_ms": 97.03125,
+      "cpu_core_equivalent_pct": 96.77811860464946,
+      "cpu_system_normalized_pct": 4.838905930232474,
+      "throughput_inferences_per_second": 9.973912384376112
+    },
+    "accepted_fraction": 1.0
+  },
+  "memory": {
+    "baseline_rss_mib": 39.43359375,
+    "post_measurement_rss_mib": 48.2734375,
+    "sampled_peak_rss_mib": 109.515625,
+    "sampled_incremental_rss_mib": 70.08203125,
+    "process_lifetime_peak_rss_mib": 110.98046875,
+    "private_memory_mib": 69.03515625,
+    "traced_peak_allocation_mib": 62.452484130859375,
+    "measurement_iterations": 8.0
+  },
+  "cold_start": {
+    "runs": [
+      {
+        "input_generation_ms": 14.832,
+        "pipeline_init_ms": 13.3583,
+        "first_inference_ms": 102.898,
+        "pipeline_to_decision_ms": 116.2563,
+        "accepted": true,
+        "predicted_template": "Star",
+        "run": 0,
+        "process_start_to_exit_ms": 268.044
+      },
+      {
+        "input_generation_ms": 13.4851,
+        "pipeline_init_ms": 13.0476,
+        "first_inference_ms": 104.56,
+        "pipeline_to_decision_ms": 117.6076,
+        "accepted": true,
+        "predicted_template": "Star",
+        "run": 1,
+        "process_start_to_exit_ms": 263.2653
+      },
+      {
+        "input_generation_ms": 13.7473,
+        "pipeline_init_ms": 12.982,
+        "first_inference_ms": 102.9738,
+        "pipeline_to_decision_ms": 115.9558,
+        "accepted": true,
+        "predicted_template": "Star",
+        "run": 2,
+        "process_start_to_exit_ms": 261.5489
+      },
+      {
+        "input_generation_ms": 13.6473,
+        "pipeline_init_ms": 13.8046,
+        "first_inference_ms": 103.0801,
+        "pipeline_to_decision_ms": 116.88470000000001,
+        "accepted": true,
+        "predicted_template": "Star",
+        "run": 3,
+        "process_start_to_exit_ms": 262.2022
+      },
+      {
+        "input_generation_ms": 13.554,
+        "pipeline_init_ms": 13.0793,
+        "first_inference_ms": 103.5373,
+        "pipeline_to_decision_ms": 116.6166,
+        "accepted": true,
+        "predicted_template": "Star",
+        "run": 4,
+        "process_start_to_exit_ms": 259.1956
+      }
+    ],
+    "summary": {
+      "input_generation_ms": {
+        "mean": 13.85314,
+        "std": 0.5560299659191046,
+        "min": 13.4851,
+        "median": 13.6473,
+        "p95": 14.61506,
+        "p99": 14.788612,
+        "max": 14.832
+      },
+      "pipeline_init_ms": {
+        "mean": 13.25436,
+        "std": 0.3395376459245725,
+        "min": 12.982,
+        "median": 13.0793,
+        "p95": 13.715340000000001,
+        "p99": 13.786748000000001,
+        "max": 13.8046
+      },
+      "first_inference_ms": {
+        "mean": 103.40984,
+        "std": 0.6891940242050876,
+        "min": 102.898,
+        "median": 103.0801,
+        "p95": 104.35546000000001,
+        "p99": 104.519092,
+        "max": 104.56
+      },
+      "pipeline_to_decision_ms": {
+        "mean": 116.66420000000001,
+        "std": 0.6342520279825721,
+        "min": 115.9558,
+        "median": 116.6166,
+        "p95": 117.46302,
+        "p99": 117.57868400000001,
+        "max": 117.6076
+      },
+      "process_start_to_exit_ms": {
+        "mean": 262.8512,
+        "std": 3.264094372869745,
+        "min": 259.1956,
+        "median": 262.2022,
+        "p95": 267.08826,
+        "p99": 267.852852,
+        "max": 268.044
+      }
+    }
+  },
+  "scaling": [
+    {
+      "dimension": "satellites",
+      "value": 8,
+      "frames": 100,
+      "satellites": 8,
+      "window_seconds": 4.0,
+      "iterations": 12,
+      "mean_ms": 63.454316666666664,
+      "median_ms": 63.693250000000006,
+      "p95_ms": 64.34777,
+      "p99_ms": 64.439554,
+      "throughput_inferences_per_second": 15.758235056662672,
+      "accepted_fraction": 1.0,
+      "predicted_template": "Star"
+    },
+    {
+      "dimension": "satellites",
+      "value": 16,
+      "frames": 100,
+      "satellites": 16,
+      "window_seconds": 4.0,
+      "iterations": 12,
+      "mean_ms": 100.02629999999999,
+      "median_ms": 99.95679999999999,
+      "p95_ms": 101.668975,
+      "p99_ms": 101.71451499999999,
+      "throughput_inferences_per_second": 9.996913452971395,
+      "accepted_fraction": 1.0,
+      "predicted_template": "Star"
+    },
+    {
+      "dimension": "satellites",
+      "value": 24,
+      "frames": 100,
+      "satellites": 24,
+      "window_seconds": 4.0,
+      "iterations": 12,
+      "mean_ms": 136.25289166666667,
+      "median_ms": 136.0763,
+      "p95_ms": 138.520085,
+      "p99_ms": 139.048657,
+      "throughput_inferences_per_second": 7.339056329459045,
+      "accepted_fraction": 1.0,
+      "predicted_template": "Star"
+    },
+    {
+      "dimension": "window_frames",
+      "value": 50,
+      "frames": 50,
+      "satellites": 16,
+      "window_seconds": 2.0,
+      "iterations": 12,
+      "mean_ms": 59.75908333333333,
+      "median_ms": 60.0102,
+      "p95_ms": 60.78506,
+      "p99_ms": 60.901572,
+      "throughput_inferences_per_second": 16.73264441317919,
+      "accepted_fraction": 1.0,
+      "predicted_template": "Star"
+    },
+    {
+      "dimension": "window_frames",
+      "value": 100,
+      "frames": 100,
+      "satellites": 16,
+      "window_seconds": 4.0,
+      "iterations": 12,
+      "mean_ms": 99.31524166666667,
+      "median_ms": 99.00485,
+      "p95_ms": 101.753745,
+      "p99_ms": 101.776669,
+      "throughput_inferences_per_second": 10.068484995901708,
+      "accepted_fraction": 1.0,
+      "predicted_template": "Star"
+    },
+    {
+      "dimension": "window_frames",
+      "value": 150,
+      "frames": 150,
+      "satellites": 16,
+      "window_seconds": 6.0,
+      "iterations": 12,
+      "mean_ms": 139.19084999999998,
+      "median_ms": 139.28255000000001,
+      "p95_ms": 141.69349499999998,
+      "p99_ms": 143.031579,
+      "throughput_inferences_per_second": 7.184164807614352,
+      "accepted_fraction": 1.0,
+      "predicted_template": "Star"
+    }
+  ]
+}
