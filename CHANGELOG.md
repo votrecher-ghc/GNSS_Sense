@@ -3,6 +3,16 @@
 本文档记录 StarDial 代码与论文的同步修改。论文侧对应记录位于
 `D:\论文\StarDial-src\CHANGELOG.md`。
 
+## 2026-08-11 18:47:00（北京时间，UTC+08:00）
+
+### Fig. 17 四图统一
+
+- 新增 `gesture_analysis/scientific_graphing/standardize_environment_figure_set.py`，将两个混淆矩阵、认证指标柱状图和 ROC 图统一为 `800×800 pt` 的正方形矢量画布。
+- 四图统一采用轴标题 50 pt、刻度 27 pt、图例/色条 23 pt 的字号层级，并协调绘图区边距与占比。
+- ROC 图从原矢量 PDF 中提取并重绘全部三条曲线，保持曲线点、EER 标注和实验数据不变。
+- `export_paper_figures_data_driven.m` 中同步加入方形柱状图布局和统一字号设置，便于后续重新导出时保持一致。
+- 论文侧 Fig. 17 的四个子图容器统一为 `0.47\columnwidth`，并全部按 `width=\linewidth` 插入。
+
 ## 2026-08-11 18:01:00（北京时间，UTC+08:00）
 
 ### Fig. 17 子图尺寸修正

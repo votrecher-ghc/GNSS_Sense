@@ -4808,7 +4808,7 @@ function [tick_fs, label_fs] = height_curve_font_sizes_local()
 end
 
 function label_fs = confusion_axis_label_font_size_local()
-label_fs = 60;
+label_fs = 50;
 end
 
 function apply_paper_axes_style(ax, cfg)
@@ -4848,7 +4848,7 @@ function apply_confusion_matrix_axes_style_local(ax, cfg)
 label_fs = confusion_axis_label_font_size_local();
 apply_fixed_axes_font_size_local(ax, cfg, tick_fs, label_fs);
 if isprop(ax, 'XAxis') && ~isempty(ax.XAxis) && isgraphics(ax.XAxis)
-    ax.XAxis.FontSize = max(1, round(tick_fs * 0.8));
+    ax.XAxis.FontSize = tick_fs;
     if isgraphics(ax.XAxis.Label)
         ax.XAxis.Label.FontSize = label_fs;
         ax.XAxis.Label.FontName = cfg.style.font_name;
