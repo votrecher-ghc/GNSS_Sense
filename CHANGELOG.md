@@ -3,6 +3,14 @@
 本文档记录 StarDial 代码与论文的同步修改。论文侧对应记录位于
 `D:\论文\StarDial-src\CHANGELOG.md`。
 
+## 2026-08-12 12:27:00（北京时间，UTC+08:00）
+
+### Fig. 16 紧凑布局
+
+- 将 Attack-defense rates 图由约 `1056×836 pt` 的偏高画布调整为 `1056×575 pt` 的宽扁画布，论文中的显示宽度保持不变，纵向占用减少约 31%。
+- 图例改为绘图区上方的单行双项布局，横轴类别标签整体下移，避免标签进入柱状绘图区。
+- 柱高、类别、坐标范围和配色保持不变；新增 `gesture_analysis/scientific_graphing/compact_attack_defense_rates.py` 以便复现紧凑矢量 PDF，并同步修改 MATLAB 源绘图布局。
+
 ## 2026-08-12 11:11:00（北京时间，UTC+08:00）
 
 ### 实验结果图字体与 Fig. 17 布局协调

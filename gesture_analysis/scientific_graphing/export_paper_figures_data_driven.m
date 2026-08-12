@@ -2972,11 +2972,14 @@ end
 
 bar_data = 100 * [[tar; asr(:)], [frr; far(:)]];
 attack_font_size = cfg.style.font_size + 6;
-f = figure('Visible', on_off(cfg.show_figures), 'Color', 'w', 'Position', consistent_paper_canvas_position_local());
+% Fig. 16 is inserted as a single-column panel, so a wide canvas avoids
+% spending disproportionate vertical space in the paper.
+f = figure('Visible', on_off(cfg.show_figures), 'Color', 'w', ...
+    'Position', [120, 100, 1380, 620]);
 ax = axes(f);
 hold(ax, 'on');
 apply_axes_style(ax, cfg);
-ax.Position = paper_axes_position_local('bar_attack_rates');
+ax.Position = [0.105, 0.245, 0.855, 0.630];
 ax.Layer = 'bottom';
 grid(ax, 'on');
 
@@ -2994,11 +2997,12 @@ ylabel(ax, 'Rate (%)');
 xlim(ax, [0.45, numel(group_labels) + 0.55]);
 ylim(ax, [0, 105]);
 yticks(ax, 0:10:100);
-lgd = legend(ax, {'Success metric (TAR / ASR)', 'Error metric (FRR / FAR)'}, 'Location', 'northeast', 'Box', 'on');
+lgd = legend(ax, {'Success metric (TAR / ASR)', 'Error metric (FRR / FAR)'}, ...
+    'Location', 'northoutside', 'Orientation', 'horizontal', ...
+    'NumColumns', 2, 'Box', 'off');
 
 apply_fixed_axes_font_size_local(ax, cfg, attack_font_size, attack_font_size);
 apply_fixed_legend_font_size_local(lgd, cfg, attack_font_size);
-place_legend_consistently(lgd, ax, cfg, 0.014, 0.034);
 save_figure(f, out_path, cfg.save_resolution, cfg.show_figures);
 end
 
@@ -4978,7 +4982,6 @@ consistent_names = { ...
     'authentication_metrics_bar', ...
     'feature_space_pca', ...
     'feature_space_tsne', ...
-    'attack_defense_rates', ...
     'scenario_confusion_matrix_near_building', ...
     'scenario_confusion_matrix_near_trees', ...
     'scenario_authentication_metrics_bar', ...
