@@ -58,7 +58,10 @@ def render(output: Path) -> None:
     pdf.setFillColorRGB(1, 1, 1)
     pdf.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
 
-    # Grid and y-axis ticks.
+    centers = [LEFT + PLOT_W * (index + 0.5) / len(GROUPS)
+               for index in range(len(GROUPS))]
+
+    # Full grid: horizontal percentage guides plus vertical category guides.
     pdf.setFont("Helvetica", 34)
     for tick in range(0, 101, 10):
         y = BOTTOM + PLOT_H * tick / 105.0
@@ -68,8 +71,11 @@ def render(output: Path) -> None:
         pdf.setFillColorRGB(0.12, 0.12, 0.12)
         pdf.drawRightString(LEFT - 13, y - 10, str(tick))
 
-    centers = [LEFT + PLOT_W * (index + 0.5) / len(GROUPS)
-               for index in range(len(GROUPS))]
+    pdf.setStrokeColorRGB(0.86, 0.86, 0.86)
+    pdf.setLineWidth(0.7)
+    for center in centers:
+        pdf.line(center, BOTTOM, center, BOTTOM + PLOT_H)
+
     bar_w = 52.0
     gap = 10.0
     for center, success, error in zip(centers, SUCCESS, ERROR):

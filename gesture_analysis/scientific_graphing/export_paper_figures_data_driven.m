@@ -2982,6 +2982,8 @@ apply_axes_style(ax, cfg);
 ax.Position = [0.105, 0.245, 0.855, 0.630];
 ax.Layer = 'bottom';
 grid(ax, 'on');
+ax.XGrid = 'on';
+ax.YGrid = 'on';
 
 b = bar(ax, bar_data, 'grouped', 'BarWidth', cfg.style.bar_width, 'LineStyle', 'none');
 b(1).FaceColor = cfg.style.bar_palette(1, :);
