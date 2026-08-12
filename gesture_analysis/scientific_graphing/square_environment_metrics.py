@@ -30,7 +30,7 @@ def render(output: Path) -> None:
     pdf.rect(0, 0, page, page, stroke=0, fill=1)
 
     # Grid, ticks, and square plotting area.
-    pdf.setFont("Helvetica", 27)
+    pdf.setFont("Helvetica", 31)
     for tick in range(0, 101, 10):
         y = bottom + size * tick / 105.0
         pdf.setStrokeColorRGB(0.80, 0.80, 0.80)
@@ -62,7 +62,7 @@ def render(output: Path) -> None:
     pdf.rect(left, bottom, size, size, stroke=1, fill=0)
 
     pdf.setFillColorRGB(0.15, 0.15, 0.15)
-    pdf.setFont("Helvetica", 27)
+    pdf.setFont("Helvetica", 31)
     for center, label in zip(centers, SCENARIOS):
         first, second = label.split("\n")
         pdf.drawCentredString(center, bottom - 36, first)
@@ -82,7 +82,7 @@ def render(output: Path) -> None:
     pdf.setFillColorRGB(1, 1, 1)
     pdf.setStrokeColorRGB(0.15, 0.15, 0.15)
     pdf.rect(legend_x, legend_y, legend_width, legend_height, stroke=1, fill=1)
-    pdf.setFont("Helvetica", 23)
+    pdf.setFont("Helvetica", 27)
     for index, ((label, _), color) in enumerate(zip(metric_items, COLORS)):
         y = legend_y + legend_height - 25 - 25 * index
         pdf.setFillColorRGB(*color)

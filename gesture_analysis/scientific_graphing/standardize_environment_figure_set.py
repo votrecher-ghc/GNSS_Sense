@@ -22,9 +22,9 @@ from square_environment_metrics import render as render_metrics
 
 PAGE = 800.0
 AXIS_FONT = 50
-TICK_FONT = 27
+TICK_FONT = 31
 ANNOTATION_FONT = 10
-COLORBAR_FONT = 23
+COLORBAR_FONT = 27
 CURVE_COLORS = {
     "Open field": (0.1490, 0.4118, 0.7412),
     "Near building": (0.7804, 0.4196, 0.1804),
@@ -62,7 +62,10 @@ def draw_confusion(output: Path, matrix: list[list[float]]) -> None:
     pdf.setFillColorRGB(1, 1, 1)
     pdf.rect(0, 0, PAGE, PAGE, stroke=0, fill=1)
 
-    left, bottom, heatmap_size = 115.0, 150.0, 600.0
+    # Leave a dedicated band below the heatmap for the rotated class labels.
+    # The former baseline placed the label anchors only 11 pt below the axes,
+    # so the long labels visually intruded into the last heatmap row.
+    left, bottom, heatmap_size = 115.0, 178.0, 570.0
     cell = heatmap_size / len(CLASSES)
 
     for row, values in enumerate(matrix):
@@ -86,20 +89,24 @@ def draw_confusion(output: Path, matrix: list[list[float]]) -> None:
         center_y = bottom + heatmap_size - (index + 0.5) * cell
         pdf.drawRightString(left - 10, center_y - 5, label)
         pdf.saveState()
-        pdf.translate(center_x + 4, bottom - 11)
-        pdf.rotate(-55)
+        # ``drawRightString`` extends backwards from the anchor.  With a
+        # negative rotation that backwards direction points upward, so the
+        # anchor must sit far enough below the heatmap for long labels such as
+        # ``L-swipe`` and ``R-swipe`` to end outside the data cells.
+        pdf.translate(center_x + 7, bottom - 88)
+        pdf.rotate(-50)
         pdf.drawRightString(0, 0, label)
         pdf.restoreState()
 
     pdf.setFont("Helvetica", AXIS_FONT)
-    pdf.drawCentredString(left + heatmap_size / 2, 25, "Predicted class")
+    pdf.drawCentredString(left + heatmap_size / 2, 28, "Predicted class")
     pdf.saveState()
     pdf.translate(35, bottom + heatmap_size / 2)
     pdf.rotate(90)
     pdf.drawCentredString(0, 0, "True class")
     pdf.restoreState()
 
-    colorbar_x, colorbar_w = 735.0, 20.0
+    colorbar_x, colorbar_w = 711.0, 20.0
     steps = 120
     for index in range(steps):
         value = 0.9 * index / (steps - 1)
@@ -114,7 +121,7 @@ def draw_confusion(output: Path, matrix: list[list[float]]) -> None:
         y = bottom + heatmap_size * tick / 0.9
         pdf.drawString(colorbar_x + colorbar_w + 8, y - 4, f"{tick:.1f}")
     pdf.saveState()
-    pdf.translate(790, bottom + heatmap_size / 2)
+    pdf.translate(786, bottom + heatmap_size / 2)
     pdf.rotate(90)
     pdf.drawCentredString(0, 0, "Average score")
     pdf.restoreState()

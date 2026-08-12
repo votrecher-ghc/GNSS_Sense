@@ -3,6 +3,15 @@
 本文档记录 StarDial 代码与论文的同步修改。论文侧对应记录位于
 `D:\论文\StarDial-src\CHANGELOG.md`。
 
+## 2026-08-12 11:11:00（北京时间，UTC+08:00）
+
+### 实验结果图字体与 Fig. 17 布局协调
+
+- 调整 `standardize_environment_figure_set.py` 与 `square_environment_metrics.py`：Fig. 17 四个子图统一轴标题、刻度、图例和色条的视觉层级，两个混淆矩阵的横轴类别标签下移并改为向右下方旋转，避免标签进入热力图单元格。
+- 新增 `gesture_analysis/scientific_graphing/harmonize_evaluation_pdf_fonts.py`，根据论文中的实际插入宽度逐图调整实验结果 PDF 的文字比例，使半栏图与全栏图在 Overleaf 中接近 Fig. 11(b) 的视觉字号，而不是机械使用同一个源字号。
+- 时空认证通过率图的短轴标题与刻度适当放大；较长的纵轴标题单独采用可完整显示的字号，避免 `Authentication pass rate (%)` 在 PDF 边界处被截断。
+- 论文侧同步更新 8 张实验结果 PDF，并将 open-field EER 正文数值由 1.96% 修正为与 ROC 实验图一致的 2.79%。
+
 ## 2026-08-11 18:47:00（北京时间，UTC+08:00）
 
 ### Fig. 17 四图统一
